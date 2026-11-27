@@ -27,7 +27,7 @@
 
 		<view class="HiFiKnob"
 		      control-tag="kHighsParam"
-		      origin="83, 69"
+		      origin="83, 61"
 		      size="108, 108"
 		      bitmap="knob_highs"
 		      step-count="41"
@@ -43,7 +43,7 @@
 		      transparent="false"/>
 		<view class="HiFiKnob"
 		      control-tag="kBassParam"
-		      origin="83, 291"
+		      origin="83, 299"
 		      size="108, 108"
 		      bitmap="knob_bass"
 		      step-count="41"
