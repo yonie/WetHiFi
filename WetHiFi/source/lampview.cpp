@@ -36,7 +36,6 @@ const RGBf kNeutral = {0.86, 0.92, 0.88};
 const Steinberg::Vst::ParamID kKnobIds[3] = {kHighsParam, kMidsParam, kBassParam};
 
 constexpr uint32_t kTickMs = 16;        // 60 frames a second
-constexpr double kTrailAlpha[LampView::kTrail] = {0.10, 0.20, 0.38, 1.00};
 constexpr int kGridX = 80;              // spectrogram cells across ...
 constexpr int kGridY = 56;              // ... and up
 
@@ -313,14 +312,9 @@ void LampView::draw(CDrawContext* context)
 
     context->setDrawMode(kAntiAliasing | kNonIntegralMode);
 
-    // the bloom of the screen onto the white bezel, with the music
-    radial(r * 1.45, {{0.00, col(1.0, 0.0, 0.0)}, {0.66, col(1.0, 0.0, 0.0)},
-                      {0.70, col(1.0, 0.0, 0.10 + 0.30 * vu)}, {1.00, col(1.0, 0.0, 0.0)}});
-    // the screen: dark glass, a touch lighter in the middle
-    radial(r, {{0.00, CColor(30, 33, 31, 255)}, {0.75, CColor(14, 16, 15, 255)},
-               {0.93, CColor(6, 7, 7, 255)}, {1.00, CColor(2, 2, 2, 255)}});
-    // the glow behind the picture: the colour, lifted by the music
-    radial(r * 0.95, {{0.00, col(1.0, 0.0, 0.06 + 0.22 * vu)}, {1.00, col(1.0, 0.0, 0.0)}});
+    // the screen: plain dark glass, no glow, no haze over the picture
+    radial(r, {{0.00, CColor(12, 13, 13, 255)}, {1.00, CColor(6, 7, 7, 255)}});
+    (void)col;
 
     const int mode = hifi ? hifi->viewMode() : 0;
     if (mode == 1)
@@ -329,46 +323,23 @@ void LampView::draw(CDrawContext* context)
         drawAnalyser(context, c, r);
     else
         drawScope(context, c, r);
-
-    // glass: a soft reflection across the top-left of the screen
-    {
-        auto p = owned(context->createGraphicsPath());
-        auto g = owned(CGradient::create(GradientColorStopMap()));
-        if (p && g)
-        {
-            p->addEllipse(CRect(c.x - r, c.y - r, c.x + r, c.y + r));
-            g->addColorStop(0.0, CColor(255, 255, 255, 28));
-            g->addColorStop(0.45, CColor(255, 255, 255, 0));
-            g->addColorStop(1.0, CColor(255, 255, 255, 0));
-            context->fillLinearGradient(p, *g, CPoint(c.x - r * 0.7, c.y - r * 0.9),
-                                        CPoint(c.x + r * 0.2, c.y + r * 0.3));
-        }
-    }
 }
 
 //------------------------------------------------------------------------
-// The oscilloscope: a faint graticule and the last few traces, oldest first,
-// each as a wide soft glow, a narrower one and a bright core. The amplitude
-// eases off towards the rim, so the line never leaves the glass.
+// The oscilloscope: the newest trace and five older ones, nothing else.
 void LampView::drawScope(CDrawContext* context, CPoint c, CCoord r)
 {
     auto col = [&](double whiten, double alpha) {
         return CColor(to8(mixR + (1 - mixR) * whiten), to8(mixG + (1 - mixG) * whiten),
                       to8(mixB + (1 - mixB) * whiten), to8(alpha));
     };
-    if (auto p = owned(context->createGraphicsPath()))
-    {
-        p->beginSubpath(CPoint(c.x - r * 0.92, c.y));
-        p->addLine(CPoint(c.x + r * 0.92, c.y));
-        p->beginSubpath(CPoint(c.x, c.y - r * 0.92));
-        p->addLine(CPoint(c.x, c.y + r * 0.92));
-        p->addEllipse(CRect(c.x - r * 0.5, c.y - r * 0.5, c.x + r * 0.5, c.y + r * 0.5));
-        context->setLineStyle(kLineSolid);
-        context->setLineWidth(std::max(1.0, r * 0.006));
-        context->setFrameColor(col(0.0, 0.10));
-        context->drawGraphicsPath(p, CDrawContext::kPathStroked);
-    }
-    const CLineStyle round(CLineStyle::kLineCapRound, CLineStyle::kLineJoinRound);
+    // A plain scope, redrawn every frame: the newest trace as one sharp line,
+    // the five before it as the same thin line, fainter the older it is (Ronald,
+    // 2026-11-27). Linear amplitude; the line is only clipped where it would
+    // leave the glass, never scaled down towards the rim.
+    static constexpr double kShadow[kTrail] = {0.06, 0.10, 0.15, 0.22, 0.32, 1.00};
+    context->setLineStyle(CLineStyle(CLineStyle::kLineCapRound, CLineStyle::kLineJoinRound));
+    context->setLineWidth(std::max(1.5, r * 0.014));
     for (int k = 0; k < kTrail; ++k)
     {
         const auto& s = trail[k];
@@ -382,24 +353,15 @@ void LampView::drawScope(CDrawContext* context, CPoint c, CCoord r)
         for (size_t i = 0; i < n; ++i)
         {
             const double u = -span + 2.0 * span * double(i) / double(n - 1);
-            const double env = std::sqrt(std::max(0.0, 1.0 - u * u));
-            const double y = std::tanh(2.2 * s[i]) * 0.80 * env;
+            const double lim = 0.96 * std::sqrt(std::max(0.0, 1.0 - u * u));
+            const double y = std::clamp(double(s[i]) * 0.80, -lim, lim);
             const CPoint pt(c.x + u * r, c.y - y * r);
             if (i == 0)
                 p->beginSubpath(pt);
             else
                 p->addLine(pt);
         }
-        const double a = kTrailAlpha[k];
-        context->setLineStyle(round);
-        context->setLineWidth(r * 0.075);
-        context->setFrameColor(col(0.0, 0.10 * a));
-        context->drawGraphicsPath(p, CDrawContext::kPathStroked);
-        context->setLineWidth(r * 0.032);
-        context->setFrameColor(col(0.0, 0.32 * a));
-        context->drawGraphicsPath(p, CDrawContext::kPathStroked);
-        context->setLineWidth(std::max(1.2, r * 0.012));
-        context->setFrameColor(col(0.55, 0.95 * a));
+        context->setFrameColor(col(0.55, kShadow[k]));
         context->drawGraphicsPath(p, CDrawContext::kPathStroked);
     }
 }

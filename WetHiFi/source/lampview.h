@@ -47,7 +47,7 @@ public:
     bool removed(VSTGUI::CView* parent) override;
     void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
 
-    static constexpr int kTrail = 4;    // oscilloscope traces kept for the afterglow
+    static constexpr int kTrail = 6;    // the newest trace plus the last five as a shadow
     static constexpr int kFFT = 8192;   // 6 Hz bins at 48 kHz, so the low end resolves
     static constexpr int kBands = 128;  // log-spaced bands, 20 Hz to 20 kHz
 
